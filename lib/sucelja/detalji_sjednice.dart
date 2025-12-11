@@ -4,8 +4,10 @@ import 'package:intl/intl.dart';
 import 'package:esjednice/dizajn_sistem/dizajn_sistem.dart';
 import 'package:esjednice/komponente/komponente.dart';
 import 'package:esjednice/provideri/sjednice.dart';
+import 'package:esjednice/provideri/sjednice_notifier.dart';
+import 'package:esjednice/modeli/sjednica.dart';
 
-class DetaljiSjedniceEkran extends ConsumerWidget {
+class DetaljiSjedniceEkran extends ConsumerStatefulWidget {
   final String sjednicaId;
 
   const DetaljiSjedniceEkran({
@@ -14,8 +16,74 @@ class DetaljiSjedniceEkran extends ConsumerWidget {
   }) : super(key: key);
 
   @override
+  ConsumerState<DetaljiSjedniceEkran> createState() =>
+      _DetaljiSjedniceEkranState();
+}
+
+class _DetaljiSjedniceEkranState extends ConsumerState<DetaljiSjedniceEkran> {
+  late Map<String, bool> _prisutnostMap;
+
+  void _initializePrisutnostMap(Sjednica sjednica) {
+    _prisutnostMap = {};
+    for (final p in sjednica.prisutnost) {
+      _prisutnostMap[p.korisnikId] = p.prisutan;
+    }
+  }
+
+  Future<void> _updatePrisutnost(Sjednica sjednica) async {
+    final updatedPrisutnost = sjednica.prisutnost.map((p) {
+      final newStatus = _prisutnostMap[p.korisnikId] ?? p.prisutan;
+      return p.copyWith(prisutan: newStatus);
+    }).toList();
+
+    await ref
+        .read(sjedniceNotifierProvider.notifier)
+        .updatePrisutnost(
+          sjednicaId: widget.sjednicaId,
+          prisutnost: updatedPrisutnost,
+        );
+  }
+
+  void _changeStatus(Sjednica sjednica, SjednicaStatus newStatus) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Promijeni status'),
+        content: Text(
+          'Jeste li sigurni da želite promijeniti status na "${newStatus.displayName}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Odustani'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Potvrdi'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await ref
+          .read(sjedniceNotifierProvider.notifier)
+          .updateSjednicaStatus(
+            sjednicaId: widget.sjednicaId,
+            newStatus: newStatus,
+          );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Status promijenjen na ${newStatus.displayName}')),
+        );
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sjednicaAsync = ref.watch(pojedinacnaSjednicaProvider(sjednicaId));
+    final sjednicaAsync = ref.watch(pojedinacnaSjednicaProvider(widget.sjednicaId));
 
     return AppPageScaffold(
       title: 'Detalji Sjednice',
@@ -48,12 +116,17 @@ class DetaljiSjedniceEkran extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.edit),
-                    onPressed: () {
-                      // Navigate to edit screen
-                    },
-                  ),
+                  if (sjednica.status == SjednicaStatus.planned)
+                   IconButton(
+                     icon: const Icon(Icons.edit),
+                     onPressed: () {
+                       Navigator.pushNamed(
+                         context,
+                         '/uredi-sjednica',
+                         arguments: sjednica.id,
+                       );
+                     },
+                   ),
                 ],
               ),
               const SizedBox(height: AppDesign.spacingL),
@@ -153,6 +226,62 @@ class DetaljiSjedniceEkran extends ConsumerWidget {
                 const SizedBox(height: AppDesign.spacingL),
               ],
 
+              // Status transition buttons (if applicable)
+              if (sjednica.status != SjednicaStatus.canceled &&
+                  sjednica.status != SjednicaStatus.concluded) ...[
+                Container(
+                  padding: const EdgeInsets.all(AppDesign.spacingL),
+                  decoration: BoxDecoration(
+                    color: AppDesign.white,
+                    borderRadius: BorderRadius.circular(AppDesign.cardRadius),
+                    border: Border.all(color: AppDesign.borderGray),
+                    boxShadow: [AppDesign.cardShadow],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Akcije',
+                        style: AppDesign.cardTitle,
+                      ),
+                      const SizedBox(height: AppDesign.spacingL),
+                      Row(
+                        children: [
+                          if (sjednica.status == SjednicaStatus.planned) ...[
+                            ElevatedButton(
+                              onPressed: () =>
+                                  _changeStatus(sjednica, SjednicaStatus.inProgress),
+                              child: const Text('Započni sjednico'),
+                            ),
+                            const SizedBox(width: AppDesign.spacingM),
+                          ],
+                          if (sjednica.status == SjednicaStatus.inProgress) ...[
+                            ElevatedButton(
+                              onPressed: () =>
+                                  _changeStatus(sjednica, SjednicaStatus.concluded),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppDesign.successGreen,
+                              ),
+                              child: const Text('Završi sjednico'),
+                            ),
+                            const SizedBox(width: AppDesign.spacingM),
+                          ],
+                          ElevatedButton(
+                            onPressed: () =>
+                                _changeStatus(sjednica, SjednicaStatus.canceled),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppDesign.errorRed,
+                            ),
+                            child: const Text('Otkaži sjednico'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppDesign.spacingL),
+              ],
+
               // Attendance section
               if (sjednica.prisutnost.isNotEmpty) ...[
                 Container(
@@ -166,9 +295,30 @@ class DetaljiSjedniceEkran extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Prisutnost',
-                        style: AppDesign.cardTitle,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Prisutnost',
+                            style: AppDesign.cardTitle,
+                          ),
+                          if (sjednica.status == SjednicaStatus.inProgress)
+                            ElevatedButton(
+                              onPressed: () async {
+                                if (_prisutnostMap.isEmpty) {
+                                  _initializePrisutnostMap(sjednica);
+                                }
+                                await _updatePrisutnost(sjednica);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text('Prisutnost ažurirana')),
+                                  );
+                                }
+                              },
+                              child: const Text('Spremi'),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: AppDesign.spacingL),
                       // Count summary
@@ -233,13 +383,39 @@ class DetaljiSjedniceEkran extends ConsumerWidget {
                       ),
                       const SizedBox(height: AppDesign.spacingL),
                       // Attendance list
-                      ...sjednica.prisutnost.map((p) {
-                        return PrisutnostItem(
-                          ime: p.ime,
-                          prezime: p.prezime,
-                          prisutan: p.prisutan,
-                        );
-                      }),
+                      if (sjednica.status == SjednicaStatus.inProgress)
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: sjednica.prisutnost.length,
+                          itemBuilder: (context, index) {
+                            final p = sjednica.prisutnost[index];
+                            final status = _prisutnostMap.isNotEmpty
+                                ? _prisutnostMap[p.korisnikId] ?? p.prisutan
+                                : p.prisutan;
+                            return Container(
+                              margin: const EdgeInsets.only(
+                                  bottom: AppDesign.spacingS),
+                              child: CheckboxListTile(
+                                title: Text('${p.ime} ${p.prezime}'),
+                                value: status,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _prisutnostMap[p.korisnikId] = value ?? false;
+                                  });
+                                },
+                              ),
+                            );
+                          },
+                        )
+                      else
+                        ...sjednica.prisutnost.map((p) {
+                          return PrisutnostItem(
+                            ime: p.ime,
+                            prezime: p.prezime,
+                            prisutan: p.prisutan,
+                          );
+                        }),
                     ],
                   ),
                 ),

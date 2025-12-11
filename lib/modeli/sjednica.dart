@@ -60,6 +60,24 @@ class DnevniRedStavka {
       'vrijeme': vrijeme != null ? Timestamp.fromDate(vrijeme!) : null,
     };
   }
+
+  DnevniRedStavka copyWith({
+    String? id,
+    int? rednibroj,
+    String? naslov,
+    String? opis,
+    bool? saGlasanjem,
+    DateTime? vrijeme,
+  }) {
+    return DnevniRedStavka(
+      id: id ?? this.id,
+      rednibroj: rednibroj ?? this.rednibroj,
+      naslov: naslov ?? this.naslov,
+      opis: opis ?? this.opis,
+      saGlasanjem: saGlasanjem ?? this.saGlasanjem,
+      vrijeme: vrijeme ?? this.vrijeme,
+    );
+  }
 }
 
 class Prisutnost {
@@ -96,6 +114,22 @@ class Prisutnost {
       'vrijemeProvjere':
           vrijemeProvjere != null ? Timestamp.fromDate(vrijemeProvjere!) : null,
     };
+  }
+
+  Prisutnost copyWith({
+    String? korisnikId,
+    String? ime,
+    String? prezime,
+    bool? prisutan,
+    DateTime? vrijemeProvjere,
+  }) {
+    return Prisutnost(
+      korisnikId: korisnikId ?? this.korisnikId,
+      ime: ime ?? this.ime,
+      prezime: prezime ?? this.prezime,
+      prisutan: prisutan ?? this.prisutan,
+      vrijemeProvjere: vrijemeProvjere ?? this.vrijemeProvjere,
+    );
   }
 }
 
