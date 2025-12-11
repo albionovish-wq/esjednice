@@ -1,0 +1,166 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isRavnatelj() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/korisnici/$(request.auth.uid)).data.uloga == 'ravnatelj';
+    }
+    
+    function isZapisnicar() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/korisnici/$(request.auth.uid)).data.uloga == 'zapisnicar';
+    }
+    
+    function isTeacher() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/korisnici/$(request.auth.uid)).data.uloga == 'nastavnik';
+    }
+    
+    function userBelongsToGroup(grupa) {
+      return isAuthenticated() && 
+             grupa in get(/databases/$(database)/documents/korisnici/$(request.auth.uid)).data.grupe;
+    }
+    
+    function userHasRole(role) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/korisnici/$(request.auth.uid)).data.uloga == role;
+    }
+    
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+    
+    // ==================== korisnici Collection ====================
+    match /korisnici/{userId} {
+      // Users can only read their own data, principals can read all
+      allow read: if isOwner(userId) || isRavnatelj();
+      
+      // Users can create their own account during signup
+      allow create: if isOwner(userId) && 
+                      !resource.data.get('uloga', 'nastavnik') in ['ravnatelj', 'zapisnicar'];
+      
+      // Users can update their own profile
+      allow update: if isOwner(userId) && 
+                      !request.resource.data.diff(resource.data).affectedKeys()
+                        .hasAny(['uloga', 'grupe']);
+      
+      // Only principals can update roles and groups
+      allow update: if isRavnatelj() && 
+                      (request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['uloga', 'grupe', 'updated']));
+      
+      // Only principals can delete users
+      allow delete: if isRavnatelj();
+    }
+    
+    // ==================== sjednice Collection ====================
+    match /sjednice/{sjednicaId} {
+      // Read: Principals see all, others see their group's meetings
+      allow read: if isRavnatelj() || 
+                     userBelongsToGroup(resource.data.grupa);
+      
+      // Create: Only principals and secretaries can create
+      allow create: if (isRavnatelj() || isZapisnicar()) && 
+                       request.resource.data.sazivac == request.auth.uid &&
+                       request.resource.data.status in ['planned', 'Planirana'];
+      
+      // Update: Only sazivac or ravnatelj can update, but not before meeting starts
+      allow update: if (request.auth.uid == resource.data.sazivac || isRavnatelj()) && 
+                       (resource.data.status in ['planned', 'Planirana'] || 
+                        resource.data.status in ['inProgress', 'uTijeku'] ||
+                        (resource.data.status in ['inProgress', 'uTijeku'] && 
+                         request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['prisutnost', 'updated', 'status'])));
+      
+      // Delete: Only principals can delete
+      allow delete: if isRavnatelj();
+      
+      // Subcollection: minutes (Zapisnik)
+      match /dokumenti/{dokumentId} {
+        allow read: if isRavnatelj() || 
+                       userBelongsToGroup(get(/databases/$(database)/documents/sjednice/$(sjednicaId)).data.grupa);
+        allow create: if resource.data.sazivac == request.auth.uid || isRavnatelj();
+        allow update: if resource.data.sazivac == request.auth.uid || isRavnatelj();
+        allow delete: if isRavnatelj();
+      }
+    }
+    
+    // ==================== glasanja Collection ====================
+    match /glasanja/{glasanjeId} {
+      // Read: Principals see all, others see their group's votings
+      allow read: if isRavnatelj() || 
+                     userBelongsToGroup(resource.data.grupa);
+      
+      // Create: Only principals and secretaries
+      allow create: if (isRavnatelj() || isZapisnicar()) &&
+                       request.resource.data.status in ['openForVoting', 'Otvoreno'];
+      
+      // Vote: Any authenticated user in the group can vote if voting is open
+      allow update: if userBelongsToGroup(resource.data.grupa) &&
+                       resource.data.status in ['openForVoting', 'Otvoreno'] &&
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['glasovi', 'updated']) &&
+                       // Ensure user hasn't already voted
+                       !resource.data.glasovi.map(g => g.korisnikId)
+                         .hasAny([request.auth.uid]);
+      
+      // Close voting: Only creators or principals
+      allow update: if (request.auth.uid == resource.data.sazivac || isRavnatelj()) &&
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['status', 'updated']);
+      
+      // Delete: Only principals
+      allow delete: if isRavnatelj();
+    }
+    
+    // ==================== obavijesti Collection ====================
+    match /obavijesti/{obavijestId} {
+      // Read: Based on announcement type and user criteria
+      allow read: if isRavnatelj() ||
+                     (resource.data.aktivna == true &&
+                      (resource.data.tip == 'opca' ||
+                       (resource.data.tip == 'grupa' && 
+                        resource.data.grupe != null &&
+                        request.auth.uid != null &&
+                        get(/databases/$(database)/documents/korisnici/$(request.auth.uid)).data.grupe
+                          .hasAny(resource.data.grupe)) ||
+                       (resource.data.tip == 'uloga' && 
+                        resource.data.uloge != null &&
+                        request.auth.uid != null &&
+                        get(/databases/$(database)/documents/korisnici/$(request.auth.uid)).data.uloga 
+                          in resource.data.uloge)));
+      
+      // Create: Only principals and secretaries
+      allow create: if (isRavnatelj() || isZapisnicar()) &&
+                       request.resource.data.autorizdId == request.auth.uid &&
+                       request.resource.data.tip in ['opca', 'grupa', 'uloga'] &&
+                       request.resource.data.aktivna == true;
+      
+      // Update: Only creator or principals
+      allow update: if (request.auth.uid == resource.data.autorizdId || isRavnatelj()) &&
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['naslov', 'sadrzaj', 'tip', 'grupe', 'uloge', 'vrijeme', 'updated']);
+      
+      // Deactivate: Only creator or principals
+      allow update: if (request.auth.uid == resource.data.autorizdId || isRavnatelj()) &&
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['aktivna', 'updated']) &&
+                       resource.data.aktivna == true &&
+                       request.resource.data.aktivna == false;
+      
+      // Delete: Only principals
+      allow delete: if isRavnatelj();
+    }
+    
+    // ==================== Catch-all deny ====================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
