@@ -4,6 +4,8 @@ import 'package:esjednice/dizajn_sistem/dizajn_sistem.dart';
 import 'package:esjednice/komponente/komponente.dart';
 import 'package:esjednice/provideri/global.dart';
 import 'package:esjednice/provideri/sjednice.dart';
+import 'package:esjednice/provideri/glasanja.dart';
+import 'package:esjednice/provideri/obavijesti.dart';
 
 class DashboardEkran extends ConsumerWidget {
   const DashboardEkran({Key? key}) : super(key: key);
@@ -12,6 +14,8 @@ class DashboardEkran extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final korisnikData = ref.watch(korisnikPodaciProvider);
     final sjednicasStats = ref.watch(sjedniceStatsProvider);
+    final glasanjaStats = ref.watch(glasanjaStatsProvider);
+    final obavijestStats = ref.watch(obavijestStatsProvider);
 
     return AppPageScaffold(
       title: 'Početna',
@@ -91,6 +95,54 @@ class DashboardEkran extends ConsumerWidget {
             },
             error: (_, __) => const Text('Greška pri učitavanju podataka'),
             loading: () => const Center(child: CircularProgressIndicator()),
+          ),
+          const SizedBox(height: AppDesign.spacingL),
+          // Additional stats section
+          Text(
+            'Dodatne statistike',
+            style: AppDesign.cardTitle,
+          ),
+          const SizedBox(height: AppDesign.spacingM),
+          Row(
+            children: [
+              Expanded(
+                child: glasanjaStats.when(
+                  data: (stats) {
+                    return _buildStatCard(
+                      context,
+                      title: 'Aktivna glasanja',
+                      value: stats['open']?.toString() ?? '0',
+                      icon: Icons.how_to_vote,
+                      color: AppDesign.primaryBlue,
+                      onTap: () {
+                        Navigator.pushNamed(context, '/voting');
+                      },
+                    );
+                  },
+                  error: (_, __) => const SizedBox.shrink(),
+                  loading: () => const CircularProgressIndicator(),
+                ),
+              ),
+              const SizedBox(width: AppDesign.spacingM),
+              Expanded(
+                child: obavijestStats.when(
+                  data: (stats) {
+                    return _buildStatCard(
+                      context,
+                      title: 'Obavijesti',
+                      value: stats['active']?.toString() ?? '0',
+                      icon: Icons.mail,
+                      color: AppDesign.successGreen,
+                      onTap: () {
+                        Navigator.pushNamed(context, '/communication');
+                      },
+                    );
+                  },
+                  error: (_, __) => const SizedBox.shrink(),
+                  loading: () => const CircularProgressIndicator(),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppDesign.spacingL),
           // Quick access section

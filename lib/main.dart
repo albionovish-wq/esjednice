@@ -11,6 +11,7 @@ import 'package:esjednice/sucelja/kreiraj_sjednica.dart';
 import 'package:esjednice/sucelja/uredi_sjednica.dart';
 import 'package:esjednice/sucelja/grupe.dart';
 import 'package:esjednice/sucelja/glasanja.dart';
+import 'package:esjednice/sucelja/detalji_glasanja.dart';
 import 'package:esjednice/sucelja/komunikacija.dart';
 import 'package:esjednice/sucelja/postavke.dart';
 import 'package:esjednice/provideri/global.dart';
@@ -70,6 +71,11 @@ class MyApp extends ConsumerWidget {
             return MaterialPageRoute(builder: (_) => const GrupeEkran());
           case '/voting':
             return MaterialPageRoute(builder: (_) => const GlasanjaEkran());
+          case '/glasanje':
+            final glasanjeId = settings.arguments as String;
+            return MaterialPageRoute(
+              builder: (_) => DetaljiGlasanjaEkran(glasanjeId: glasanjeId),
+            );
           case '/communication':
             return MaterialPageRoute(builder: (_) => const KomunikacijaEkran());
           case '/settings':
